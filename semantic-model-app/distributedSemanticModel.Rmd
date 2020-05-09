@@ -1,0 +1,153 @@
+---
+title: "DistributedSemanticModel-Springer"
+author: "Mukund"
+date: "May 20, 2019"
+output: html_document
+---
+
+This app uses "wordspace" package to build distributed semantic model. 
+
+Loading Libraries 
+
+```{r}
+
+library(data.table) 
+library(wordspace)
+```
+
+## Importing dataset and Creating DSM 
+
+```{r}
+
+# loading keywords dataset 
+
+Keyword_dt <- read.csv("Keyword_dataset.csv", stringsAsFactors = FALSE)
+
+#we use dsm() constructor to create vector object -- NOUNS as targets and VERBS as features
+Vector.Obj <- dsm(target=Keyword_dt$KW1, feature=Keyword_dt$KW2, score= Keyword_dt$Frequency.of.Co.occurance,
+                  raw.freq=TRUE, sort=TRUE)
+
+# to have look at 6 most frequent nouns from the dataset
+subset(Vector.Obj$rows, rank(-f) <= 6)
+# to have look at sparse matrix -- only 5 rows are being displayed since the actual sparse matrix is very big 
+head(Vector.Obj)
+
+VObj <- Vector.Obj 
+```
+
+## The DSM parameters 
+
+
+**step 01** : Limiting non-zero entries in the sparse matrix  
+
+Rows and columns with few nonzero cells provide unreliable semantic information and can lead to numerical problems (e.g. because a sparse association score deletes the remaining nonzero entries). It is therefore common to apply frequency thresholds both on rows and columns, here in the form of requiring at least 3 nonzero cells. The option recursive=TRUE guarantees that both criteria are satisfied by the final DSM when rows and columns are filtered at the same time
+
+```{r}
+# nnzero stands for non-zero entries in rows and columns 
+# we apply frequency threshold on rows and columns, requiring at least nonzero cells 
+VObj <- subset(VObj, nnzero >= 3, nnzero >= 3, recursive=TRUE)
+dim(VObj)
+
+```
+
+## Association Measures 
+
+**step 02** : The next step is to weight co-occurrence frequency counts. 
+The built-in methods for Association Measures are as follows :- 
+        - MI (pointwise) : Mutual Information 
+        - simple-ll  : simple log-likelihood 
+        - t-score 
+        - z-score 
+        - Dice coeffieicnt 
+        - tf.idf
+        - reweight 
+
+Here, we use the simple *log-likelihood association measure* with an additional logarithmic transformation(simple-11), which has shown good results in evaluation studies. We also Normalize the weighted row vectors to unit Euclidean length (normalize=TRUE)
+
+```{r}
+VObj <- dsm.score(VObj, score="simple-ll", transform="log", normalize=TRUE, method="euclidean")
+
+# Printing a DSM object shows information about the dimensions of the co-occurrence matrix and whether it has already been scored
+
+VObj 
+```
+## Dimensionality Reduction 
+
+Most distributional models apply a dimensionality reduction technique to make data sets more manageable and to refine the semantic representations. A widely-used technique is singular value decomposition (SVD). Since VObj is a sparse matrix, dsm.projection automatically applies an efficient algorithm from the sparsesvd package.
+
+```{r}
+
+VObj300 <- dsm.projection(VObj, method="svd", n=300)
+dim(VObj300)
+
+```
+
+
+VObj300 is a dense matrix with 300 columns, giving the coordinates of the target terms in 300 latent dimensions. Its attribute "R2" shows what proportion of information from the original matrix is captured by each latent dimension.
+
+```{r}
+par(mar=c(4,4,1,1))
+plot(attr(VObj300, "R2"), type="h", xlab="latent dimension", ylab="R2")
+```
+
+## Cosine Similarity 
+
+The primary goal of a DSM is todetermine "semantic" distances between pairs of words. The arguments to "pair.distances" can also be parallel vectors in order to computwe distances for a large number of words efficiently. 
+Higher Cosine value implies higher similarity between terms. 
+
+
+```{r}
+# we can compare cosine similarity between words "diabates" and "blood pressure"
+pair.distances('diabetes', 'blood pressure', VObj300 ,method='cosine', convert = FALSE) 
+# 0.86 #?? = 30.68 deg
+
+# we can compare cosine similarity between words "diabates" and "atherosclerosis"
+pair.distances('diabetes', 'atherosclerosis', VObj300 ,method='cosine', convert = FALSE)
+# 0.79 #?? = 37.68 deg 
+
+# we can se that the angle(??) between first pair is lesser than the second pair. 
+# this is also visible in the plot we obtain at the end. 
+
+```
+
+## Finding nearest neighbours 
+
+We are often interested in finding the nearest neighbours of a given term in the DSM space, 
+The return value is actually a vector of distances to the nearest neighbours, labelled with the corresponding terms
+
+```{r}
+# lets find the nearest neighbours for "diabetes"
+nearest.neighbours(VObj300, "diabetes", n=14, convert=FALSE)   #!reduced space 
+
+```
+
+
+In above code chunk we have generated nearest neighbours in reduced space of vector object with 300 columns .i.e. VObj300 
+
+let's generate nearest neighbours for unreduced space - .i.e. VObj 
+
+```{r}
+nn <- nearest.neighbours(VObj, "diabetes", n=14, convert=FALSE) #! unreduced space 
+names(nn)
+
+```
+
+## neighbourhood plot 
+
+The neighbourhood plot visualizes nearest neighbours as a semantic network based on their mutual distances. This often helps interpretation by grouping related neighbours. The network below shows that book as a text type is similar to novel, essay, poem and article; as a form of document it is similar to paper, letter and document; and as a publication it is similar to leaflet, magazine and newspaper.
+
+
+```{r}
+
+nn.mat <- nearest.neighbours(VObj300, "diabetes", n=10, dist.matrix=TRUE)
+par(mar=c(1,1,1,1))
+plot(nn.mat)
+
+# nn.mat
+# can we transform, this matrix above to disply first column or first row 
+
+```
+
+```{r} 
+## end 
+```
